@@ -1,29 +1,88 @@
 # Java Learn — Backend
 
-API หลังบ้านของเว็บเรียนภาษา Java แบบ interactive สำหรับนักศึกษา comsci ปี 1 | Backend API for an interactive Java learning site for first-year CS students.
+Backend API for an interactive Java-learning website aimed at first-year Computer Science students. It stores Java lesson content and per-lesson coding exercises across three difficulty levels, executes student-submitted Java code for real (via the free public [Wandbox](https://wandbox.org) execution API), grades exercise submissions against stored test cases, and tracks each student's progress — identified only by name + email, with no login/password system. The companion frontend (Vue) lives in a separate repository: [basic-java-learn-frontend](https://github.com/RmenozBun/basic-java-learn-frontend).
 
-หน้าบ้าน (frontend) อยู่คนละ repo: https://github.com/RmenozBun/basic-java-learn-frontend
-The frontend lives in a separate repo: https://github.com/RmenozBun/basic-java-learn-frontend
+## Features
 
-## สิ่งที่โปรเจกต์นี้ทำ | What this does
+- Lesson content across 3 difficulty levels (easy / medium / hard), each with a title, summary, Markdown content, and an ordered list of coding exercises
+- Real Java code execution for a free-form "Playground" via Wandbox (`POST /api/execute`), including compile-error, timeout, and runtime-error reporting
+- Exercise grading: submitted code is run against every stored test case, with lenient output comparison (case/whitespace/punctuation-insensitive) so beginners aren't penalized for cosmetic differences
+- Per-student progress tracking (by name + email, no auth) — which lessons/exercises are completed, broken down by difficulty level
+- Safety guard for the Wandbox integration: rejects non-ASCII code/stdin up front (Wandbox silently corrupts non-ASCII bytes) and auto-strips the `public` keyword from `public class Main` so lesson code compiles under Wandbox's fixed `prog.java` filename
+- Consistent JSON response envelope (`status`, `code`, `cause`, `message`, `result`) across every endpoint
+- A seed script (`scripts/seed.js`) that populates 9 original lessons (3 per level) with worked examples and exercises, written from scratch (topic structure only inspired by the w3schools Java tutorial)
 
-- เก็บเนื้อหาบทเรียน Java 3 ระดับ (ง่าย/กลาง/ยาก) และแบบฝึกหัดแต่ละบท
-- รันโค้ด Java ที่ผู้ใช้เขียนจริงผ่าน [Wandbox](https://wandbox.org) (บริการรันโค้ดฟรีสาธารณะ ไม่ต้องสมัคร ไม่ต้อง self-host)
-- ตรวจคำตอบแบบฝึกหัดเทียบกับชุดทดสอบที่เก็บไว้ พร้อมติดตามความคืบหน้าต่อผู้เรียน (ระบุตัวตนด้วยชื่อ+อีเมล ไม่มีระบบล็อกอิน/รหัสผ่าน)
+## Tech Stack
 
----
+- Node.js (ES Modules) + [Express](https://expressjs.com/) 4
+- [MongoDB](https://www.mongodb.com/) + [Mongoose](https://mongoosejs.com/) 8
+- [Wandbox](https://wandbox.org) — free, public, no-signup code execution API (wrapped in `src/judge0.js`; the filename is a holdover from an earlier Judge0-based design, kept so callers didn't need to know the execution provider changed)
+- `axios`, `cors`, `dotenv`, `http-errors`, `moment` / `moment-timezone`
+- `nodemon` (dev dependency, for local auto-reload)
+- Docker Compose (MongoDB container for local development only — not used in production)
 
-- Stores Java lesson content across 3 difficulty levels (easy/medium/hard) with exercises per lesson
-- Executes user-submitted Java code for real via [Wandbox](https://wandbox.org) (a free, public, no-signup code execution API)
-- Grades exercise submissions against stored test cases and tracks per-student progress (identified by name + email only — no login/password system)
+## Getting Started
 
-## Stack
+### Prerequisites
 
-- Node.js + Express (ES Modules)
-- MongoDB + Mongoose
-- Wandbox (external code execution API, wrapped in `src/judge0.js`)
+- Node.js 18+
+- Docker (for a local MongoDB instance), or an existing MongoDB connection string (e.g. MongoDB Atlas)
 
-## โครงสร้างโปรเจกต์ | Project structure
+### Installation
+
+```bash
+# 1) Start MongoDB locally
+docker compose up -d
+
+# 2) Install dependencies
+npm install
+
+# 3) Configure environment variables
+# create a .env.local file (see the Environment Variables table below)
+
+# 4) Seed sample lesson data (9 lessons across 3 difficulty levels)
+npm run seed
+```
+
+### Running
+
+```bash
+npm run local   # nodemon, auto-reload — for development
+# or
+npm start       # plain node — for production
+```
+
+The server listens on `http://localhost:4000` by default (`PORT` env var). No extra setup is needed for code execution — Wandbox is a public API called directly over the internet.
+
+### Environment Variables
+
+There is no `.env.example` file in the repository; the variables below were verified from `src/config.js`.
+
+| Variable | Description | Default |
+|---|---|---|
+| `PORT` | Port Express listens on | `4000` |
+| `SUB_PATH` | Prefix mounted in front of every route | `/api` |
+| `NODE_ENV` | Environment name | `local` |
+| `MONGODB_URI` | Full MongoDB connection string (e.g. a `mongodb+srv://...` Atlas URI); used as-is when set | — |
+| `DB_HOST_MONGO` | MongoDB `host:port`, used only when `MONGODB_URI` is not set | `localhost:27017` |
+| `DB_NAME_MONGO` | Database name | `java_learn_web` |
+| `DB_USER_MONGO` / `DB_PASSWORD_MONGO` | Credentials combined with `DB_HOST_MONGO` into a connection string, used only when `MONGODB_URI` is not set | — |
+
+## API Endpoints
+
+Every response follows the same JSON envelope: `{ "status", "code", "cause", "message", "result" }`.
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/lesson?level=&email=` | List lessons (optional filter by `level`; pass `email` to include per-lesson completion status) |
+| GET | `/api/lesson/:slug?email=` | Lesson detail: content, exercises (with per-exercise pass status if `email` is given), and previous/next lesson |
+| GET | `/api/lesson/exercise/:id` | Single exercise detail (without the expected test-case outputs) |
+| POST | `/api/execute` | Run arbitrary Java code (`{ code, stdin }`) — powers the Playground |
+| POST | `/api/submission` | Submit an exercise attempt (`{ studentName, studentEmail, exerciseId, code }`), graded against the exercise's real test cases |
+| GET | `/api/progress?email=` | Per-student progress summary, broken down by difficulty level |
+| GET | `/api/check` | Basic health check ("Server is running") |
+
+## Project Structure
 
 ```text
 src/
@@ -43,101 +102,116 @@ scripts/
 docker-compose.yml    # MongoDB for local development only
 ```
 
-## เริ่มรันในเครื่อง | Local development
+## Author
 
-ต้องมี Node.js 18+ และ Docker (สำหรับ MongoDB) | Requires Node.js 18+ and Docker (for local MongoDB).
+**Theeranat Aiyarakhom** — GitHub: [https://github.com/RmenozBun](https://github.com/RmenozBun)
+
+---
+
+## ภาษาไทย
+
+Backend API ของเว็บไซต์เรียนภาษา Java แบบ interactive สำหรับนักศึกษาสาขาวิทยาการคอมพิวเตอร์ชั้นปีที่ 1 ระบบนี้เก็บเนื้อหาบทเรียนและแบบฝึกหัดเขียนโค้ดของแต่ละบทเรียน แบ่งเป็น 3 ระดับความยาก รันโค้ด Java ที่ผู้ใช้เขียนจริงผ่าน [Wandbox](https://wandbox.org) (บริการรันโค้ดสาธารณะฟรี) ตรวจคำตอบแบบฝึกหัดเทียบกับชุดทดสอบที่เก็บไว้ และติดตามความคืบหน้าของผู้เรียนแต่ละคน — โดยระบุตัวตนด้วยชื่อและอีเมลเท่านั้น ไม่มีระบบล็อกอิน/รหัสผ่าน ส่วนหน้าบ้าน (frontend, เขียนด้วย Vue) อยู่คนละ repository: [basic-java-learn-frontend](https://github.com/RmenozBun/basic-java-learn-frontend)
+
+### คุณสมบัติ
+
+- เนื้อหาบทเรียน 3 ระดับความยาก (ง่าย / กลาง / ยาก) แต่ละบทมีชื่อเรื่อง สรุปย่อ เนื้อหาแบบ Markdown และรายการแบบฝึกหัดเรียงลำดับ
+- รันโค้ด Java จริงสำหรับหน้า "Playground" อิสระผ่าน Wandbox (`POST /api/execute`) พร้อมรายงานข้อผิดพลาดคอมไพล์ การรันเกินเวลา และข้อผิดพลาดขณะรัน
+- ตรวจแบบฝึกหัด: รันโค้ดที่ส่งมาเทียบกับทุกชุดทดสอบที่เก็บไว้ โดยเปรียบเทียบผลลัพธ์แบบผ่อนปรน (ไม่สนตัวพิมพ์เล็ก-ใหญ่ ช่องว่าง หรือเครื่องหมายวรรคตอน) เพื่อไม่ให้ผู้เริ่มต้นเสียคะแนนจากความต่างเล็กน้อยที่ไม่กระทบตรรกะ
+- ติดตามความคืบหน้าของผู้เรียนแต่ละคน (ระบุด้วยชื่อ+อีเมล ไม่ต้องล็อกอิน) ว่าเรียน/ทำแบบฝึกหัดไหนผ่านแล้วบ้าง แยกตามระดับความยาก
+- กลไกป้องกันสำหรับการเชื่อมต่อ Wandbox: ปฏิเสธโค้ด/stdin ที่มีอักขระนอก ASCII ตั้งแต่ต้น (เพราะ Wandbox จะทำให้ไบต์นอก ASCII เพี้ยนโดยไม่แจ้งเตือน) และตัดคำว่า `public` ออกจาก `public class Main` อัตโนมัติ เพื่อให้คอมไพล์ผ่านภายใต้ชื่อไฟล์ `prog.java` ที่ Wandbox กำหนดตายตัว
+- รูปแบบ response แบบเดียวกันทุก endpoint (`status`, `code`, `cause`, `message`, `result`)
+- สคริปต์ seed ข้อมูล (`scripts/seed.js`) ที่ใส่บทเรียนตัวอย่างต้นฉบับ 9 บท (ระดับละ 3 บท) พร้อมตัวอย่างและแบบฝึกหัด (เขียนขึ้นเอง ได้แรงบันดาลใจด้านโครงสร้างหัวข้อจาก w3schools Java Tutorial เท่านั้น)
+
+### เทคโนโลยีที่ใช้
+
+- Node.js (ES Modules) + [Express](https://expressjs.com/) 4
+- [MongoDB](https://www.mongodb.com/) + [Mongoose](https://mongoosejs.com/) 8
+- [Wandbox](https://wandbox.org) — บริการรันโค้ดสาธารณะฟรี ไม่ต้องสมัคร (ห่อหุ้มไว้ใน `src/judge0.js` ชื่อไฟล์เป็นร่องรอยจากดีไซน์เดิมที่เคยใช้ Judge0 คงชื่อไว้เพื่อไม่ให้ส่วนอื่นต้องรู้ว่าเปลี่ยนผู้ให้บริการรันโค้ดแล้ว)
+- `axios`, `cors`, `dotenv`, `http-errors`, `moment` / `moment-timezone`
+- `nodemon` (dev dependency สำหรับ auto-reload ตอนพัฒนา)
+- Docker Compose (คอนเทนเนอร์ MongoDB สำหรับการพัฒนาในเครื่องเท่านั้น ไม่ได้ใช้ตอน production)
+
+### เริ่มต้นใช้งาน
+
+**สิ่งที่ต้องมีก่อน**
+
+- Node.js 18 ขึ้นไป
+- Docker (สำหรับรัน MongoDB ในเครื่อง) หรือ connection string ของ MongoDB ที่มีอยู่แล้ว (เช่น MongoDB Atlas)
+
+**การติดตั้ง**
 
 ```bash
-# 1) MongoDB
+# 1) รัน MongoDB ในเครื่อง
 docker compose up -d
 
-# 2) Backend
+# 2) ติดตั้ง dependencies
 npm install
-cp .env.local.example .env.local   # ถ้ามี ปรับค่าตามต้องการ | if present, adjust as needed
-npm run seed      # ใส่เนื้อหาบทเรียนตัวอย่าง 9 บท | seed 9 sample lessons
-npm run local     # http://localhost:4000
+
+# 3) ตั้งค่าตัวแปรแวดล้อม
+# สร้างไฟล์ .env.local (ดูตารางตัวแปรแวดล้อมด้านล่าง)
+
+# 4) ใส่ข้อมูลบทเรียนตัวอย่าง (9 บท ใน 3 ระดับความยาก)
+npm run seed
 ```
 
-ไม่ต้องตั้งค่าอะไรสำหรับการรันโค้ด Java — Wandbox เป็น public API เรียกผ่านอินเทอร์เน็ตได้ทันที
-No setup needed for code execution — Wandbox is a public API called directly over the internet.
+**การรัน**
 
-## Environment variables
-
-| Variable | คำอธิบาย | Description | Default |
-|---|---|---|---|
-| `PORT` | พอร์ตที่ Express ฟัง | Port Express listens on | `4000` |
-| `SUB_PATH` | prefix ของทุก route | Prefix for all routes | `/api` |
-| `NODE_ENV` | environment name | environment name | `local` |
-| `MONGODB_URI` | connection string เต็มรูปแบบ (ใช้กับ MongoDB Atlas เช่น `mongodb+srv://...`) | full connection string (use with MongoDB Atlas e.g. `mongodb+srv://...`) | — |
-| `DB_HOST_MONGO` | host:port ของ MongoDB (ใช้เมื่อไม่ได้ตั้ง `MONGODB_URI`) | MongoDB host:port (used when `MONGODB_URI` isn't set) | `localhost:27017` |
-| `DB_NAME_MONGO` | ชื่อฐานข้อมูล | database name | `java_learn_web` |
-
-## API overview
-
-ทุก response ใช้รูปแบบเดียวกัน | Every response follows the same envelope:
-
-```json
-{ "status": "success", "code": 1, "cause": "", "message": "...", "result": { } }
+```bash
+npm run local   # nodemon, auto-reload — สำหรับพัฒนา
+# หรือ
+npm start       # node ธรรมดา — สำหรับ production
 ```
 
-| Method | Path | คำอธิบาย | Description |
-|---|---|---|---|
-| GET | `/api/lesson?level=&email=` | รายการบทเรียน (กรองตามระดับได้, ส่ง email เพื่อดูสถานะเรียนจบ) | List lessons (optional level filter; pass email to include completion status) |
-| GET | `/api/lesson/:slug?email=` | รายละเอียดบทเรียน + แบบฝึกหัด + บทก่อนหน้า/ถัดไป | Lesson detail + exercises + prev/next lesson |
-| GET | `/api/lesson/exercise/:id` | รายละเอียดแบบฝึกหัดเดี่ยว | Single exercise detail |
-| POST | `/api/execute` | รันโค้ด Java อิสระ (`{ code, stdin }`) — ใช้กับหน้า Playground | Run arbitrary Java code (`{ code, stdin }`) — powers the Playground |
-| POST | `/api/submission` | ส่งคำตอบแบบฝึกหัดตรวจกับ test case จริง (`{ studentName, studentEmail, exerciseId, code }`) | Submit an exercise attempt, graded against real test cases |
-| GET | `/api/progress?email=` | สรุปความคืบหน้าของผู้เรียนรายคน | Per-student progress summary |
+เซิร์ฟเวอร์จะฟังที่ `http://localhost:4000` โดยค่าเริ่มต้น (ตัวแปร `PORT`) ไม่ต้องตั้งค่าอะไรเพิ่มสำหรับการรันโค้ด เพราะ Wandbox เป็น public API ที่เรียกผ่านอินเทอร์เน็ตได้ทันที
 
-## ⚠️ ข้อจำกัดของ Wandbox | Wandbox limitations
+**ตัวแปรแวดล้อม**
 
-- รองรับเฉพาะภาษาอังกฤษ (ASCII) ในโค้ด/stdin เท่านั้น — ตรวจจับและแจ้งเตือนไว้แล้วใน `src/judge0.js`
-  Only ASCII (English) is supported in code/stdin — this is detected and reported by `src/judge0.js`.
-- ไม่มี SLA/rate-limit ชัดเจน เหมาะกับงานระดับห้องเรียน/เดโม ถ้าต้องรองรับผู้ใช้พร้อมกันจำนวนมากควรพิจารณาย้ายไป self-host Judge0 บนเซิร์ฟเวอร์ Linux จริง
-  No formal SLA/rate limit — fine for classroom/demo scale; consider self-hosting Judge0 on a real Linux server if you need to support many concurrent users.
+ใน repository ไม่มีไฟล์ `.env.example` ตัวแปรด้านล่างนี้ตรวจสอบยืนยันมาจากไฟล์ `src/config.js`
 
-## Deploy ฟรี | Free deployment
+| ตัวแปร | คำอธิบาย | ค่าเริ่มต้น |
+|---|---|---|
+| `PORT` | พอร์ตที่ Express ฟัง | `4000` |
+| `SUB_PATH` | prefix ของทุก route | `/api` |
+| `NODE_ENV` | ชื่อ environment | `local` |
+| `MONGODB_URI` | connection string เต็มรูปแบบ (เช่น `mongodb+srv://...` ของ Atlas) ถ้าตั้งค่านี้จะใช้ทันที | — |
+| `DB_HOST_MONGO` | host:port ของ MongoDB ใช้เฉพาะเมื่อไม่ได้ตั้ง `MONGODB_URI` | `localhost:27017` |
+| `DB_NAME_MONGO` | ชื่อฐานข้อมูล | `java_learn_web` |
+| `DB_USER_MONGO` / `DB_PASSWORD_MONGO` | ข้อมูลรับรองตัวตนใช้ร่วมกับ `DB_HOST_MONGO` เพื่อประกอบ connection string ใช้เฉพาะเมื่อไม่ได้ตั้ง `MONGODB_URI` | — |
 
-ดูขั้นตอนละเอียดในหัวข้อถัดไป — สรุปสั้นๆ: deploy backend นี้ขึ้น **Render** (free web service) และใช้ **MongoDB Atlas** (free M0 tier) เป็นฐานข้อมูล ไม่ต้องใช้ Docker ตอน production เลย (`docker-compose.yml` มีไว้สำหรับ local dev เท่านั้น)
+### API Endpoints
 
-See the detailed steps below — in short: deploy this backend to **Render** (free web service) with **MongoDB Atlas** (free M0 tier) as the database. No Docker is needed in production (`docker-compose.yml` is for local development only).
+ทุก response ใช้รูปแบบเดียวกัน: `{ "status", "code", "cause", "message", "result" }`
 
-### ขั้นตอน Deploy | Deployment steps
+| Method | Path | คำอธิบาย |
+|---|---|---|
+| GET | `/api/lesson?level=&email=` | รายการบทเรียน (กรองตาม `level` ได้ ส่ง `email` เพื่อดูสถานะเรียนจบแต่ละบท) |
+| GET | `/api/lesson/:slug?email=` | รายละเอียดบทเรียน เนื้อหา แบบฝึกหัด (พร้อมสถานะผ่าน/ไม่ผ่านถ้าส่ง `email`) และบทก่อนหน้า/ถัดไป |
+| GET | `/api/lesson/exercise/:id` | รายละเอียดแบบฝึกหัดเดี่ยว (ไม่รวมผลลัพธ์ที่คาดหวังของชุดทดสอบ) |
+| POST | `/api/execute` | รันโค้ด Java อิสระ (`{ code, stdin }`) — ใช้กับหน้า Playground |
+| POST | `/api/submission` | ส่งคำตอบแบบฝึกหัด (`{ studentName, studentEmail, exerciseId, code }`) ตรวจกับชุดทดสอบจริงของแบบฝึกหัดนั้น |
+| GET | `/api/progress?email=` | สรุปความคืบหน้าของผู้เรียนรายคน แยกตามระดับความยาก |
+| GET | `/api/check` | ตรวจสอบสถานะเซิร์ฟเวอร์เบื้องต้น ("Server is running") |
 
-**1. MongoDB Atlas**
+### โครงสร้างโปรเจกต์
 
-1. สมัครฟรีที่ | Sign up free at https://www.mongodb.com/cloud/atlas/register
-2. สร้าง cluster แบบ **M0 Free** | Create an **M0 Free** cluster
-3. สร้าง Database User (username/password) ที่เมนู Database Access | Create a Database User under Database Access
-4. ที่เมนู Network Access กด "Allow Access from Anywhere" (`0.0.0.0/0`) | Under Network Access, allow access from anywhere (`0.0.0.0/0`)
-5. กด "Connect" → "Drivers" จะได้ connection string | Click "Connect" → "Drivers" to get the connection string:
-   ```text
-   mongodb+srv://<username>:<password>@cluster0.xxxxx.mongodb.net/java_learn_web?retryWrites=true&w=majority
-   ```
+```text
+src/
+  app.js              # จุดเริ่มต้นของ Express
+  config.js           # แหล่งรวมค่า process.env ทั้งหมด
+  connect.js          # การเชื่อมต่อ MongoDB
+  index.route.js      # รวม router ของทุกฟีเจอร์
+  judge0.js           # ห่อหุ้ม Wandbox code-execution API
+  timezone.js         # ตัวช่วยแปลงเวลาโซน Asia/Bangkok
+  model/              # Mongoose schema (lesson, exercise, submission)
+  lesson/             # GET /lesson, /lesson/:slug, /lesson/exercise/:id
+  execute/            # POST /execute — รันโค้ดอิสระ (Playground)
+  submission/         # POST /submission — ตรวจคำตอบแบบฝึกหัด
+  progress/           # GET /progress — สรุปความคืบหน้าของผู้เรียน
+scripts/
+  seed.js             # ใส่บทเรียนตัวอย่าง 9 บท (3 ระดับ x 3) พร้อมแบบฝึกหัดลง MongoDB
+docker-compose.yml    # MongoDB สำหรับการพัฒนาในเครื่องเท่านั้น
+```
 
-**2. Render (backend)**
+### ผู้พัฒนา
 
-1. Push repo นี้ขึ้น GitHub (ทำไปแล้ว) | Push this repo to GitHub (already done)
-2. ไปที่ | Go to https://render.com → "New +" → "Web Service"
-3. เชื่อม repo นี้ ตั้งค่า | Connect this repo, configure:
-   - **Build Command:** `npm install`
-   - **Start Command:** `npm start`
-4. เพิ่ม Environment Variables | Add environment variables:
-   ```env
-   MONGODB_URI=<connection string จากขั้นตอนที่ 1 | from step 1>
-   DB_NAME_MONGO=java_learn_web
-   SUB_PATH=/api
-   NODE_ENV=production
-   ```
-   (ไม่ต้องตั้ง `PORT` เอง Render กำหนดให้อัตโนมัติ | don't set `PORT` — Render provides it automatically)
-5. Deploy แล้วจะได้ URL แบบ | You'll get a URL like `https://your-app.onrender.com`
-6. รัน seed ข้อมูลครั้งเดียวผ่าน Render Shell tab | Seed the lesson data once via the Render Shell tab:
-   ```bash
-   npm run seed
-   ```
-
-⚠️ Render free tier จะ sleep เมื่อไม่มีคนใช้ ~15 นาที คำขอแรกหลัง sleep จะช้ากว่าปกติ (cold start)
-Render's free tier sleeps after ~15 minutes of inactivity; the first request after sleeping will be slower (cold start).
-
-จากนั้นเอา URL backend นี้ไปตั้งเป็น `API_BASE_URL` ในฝั่ง frontend (ดู README ของ frontend repo)
-Then use this backend URL as `API_BASE_URL` on the frontend side (see the frontend repo's README).
+**ธีรนาถ อัยราคม** — GitHub: [https://github.com/RmenozBun](https://github.com/RmenozBun)
