@@ -8,6 +8,8 @@ const lessonSchema = new mongoose.Schema(
     order: { type: Number, default: 0 },
     title: { type: String, required: true },
     summary: { type: String, default: "" },
+    icon: { type: String, default: "📘" },
+    minutes: { type: Number, default: 10 },
     contentMarkdown: { type: String, required: true },
     createAt: { type: String, default: nowInBangkok },
     updateAt: { type: String, default: nowInBangkok },

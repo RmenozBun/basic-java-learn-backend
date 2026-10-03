@@ -76,7 +76,7 @@ Every response follows the same JSON envelope: `{ "status", "code", "cause", "me
 |---|---|---|
 | GET | `/api/lesson?level=&email=` | List lessons (optional filter by `level`; pass `email` to include per-lesson completion status) |
 | GET | `/api/lesson/:slug?email=` | Lesson detail: content, exercises (with per-exercise pass status if `email` is given), and previous/next lesson |
-| GET | `/api/lesson/exercise/:id` | Single exercise detail (without the expected test-case outputs) |
+| GET | `/api/lesson/exercise/:id?email=` | Single exercise detail (without the expected test-case outputs; the model solution + explanation are returned only once that student has passed the exercise) |
 | POST | `/api/execute` | Run arbitrary Java code (`{ code, stdin }`) — powers the Playground |
 | POST | `/api/submission` | Submit an exercise attempt (`{ studentName, studentEmail, exerciseId, code }`), graded against the exercise's real test cases |
 | GET | `/api/progress?email=` | Per-student progress summary, broken down by difficulty level |
@@ -98,8 +98,19 @@ src/
   submission/         # POST /submission — grade an exercise attempt
   progress/           # GET /progress — per-student completion stats
 scripts/
-  seed.js             # seeds 9 lessons (3 levels x 3) with exercises into MongoDB
+  seed.js             # upserts the 9 lessons + exercises into MongoDB (exercise _ids stay stable, so student progress survives re-seeding)
+  lessons.data.js     # lesson/exercise metadata, starter + solution code, test cases
+  content/            # all teaching content as Markdown: <slug>.md (lesson text), <slug>.exercise-<n>.md (prompt / hint / solution explanation)
+  verify/             # dev-only checks: content.mjs, solutions.mjs, e2e-api.mjs (see "Verifying content and the API")
 docker-compose.yml    # MongoDB for local development only
+```
+
+## Verifying content and the API
+
+```bash
+node scripts/verify/content.mjs [file]   # runs every example in the lesson Markdown and compares the output (needs internet)
+node scripts/verify/solutions.mjs        # model solutions must pass all test cases; starter code must compile but not pass
+node scripts/verify/e2e-api.mjs          # full API test (needs MongoDB + backend running + seeded)
 ```
 
 ## Author
@@ -186,7 +197,7 @@ npm start       # node ธรรมดา — สำหรับ production
 |---|---|---|
 | GET | `/api/lesson?level=&email=` | รายการบทเรียน (กรองตาม `level` ได้ ส่ง `email` เพื่อดูสถานะเรียนจบแต่ละบท) |
 | GET | `/api/lesson/:slug?email=` | รายละเอียดบทเรียน เนื้อหา แบบฝึกหัด (พร้อมสถานะผ่าน/ไม่ผ่านถ้าส่ง `email`) และบทก่อนหน้า/ถัดไป |
-| GET | `/api/lesson/exercise/:id` | รายละเอียดแบบฝึกหัดเดี่ยว (ไม่รวมผลลัพธ์ที่คาดหวังของชุดทดสอบ) |
+| GET | `/api/lesson/exercise/:id?email=` | รายละเอียดแบบฝึกหัดเดี่ยว (ไม่รวมผลลัพธ์ที่คาดหวังของชุดทดสอบ และจะส่งเฉลยพร้อมคำอธิบายให้เฉพาะผู้เรียนที่ผ่านข้อนี้แล้ว) |
 | POST | `/api/execute` | รันโค้ด Java อิสระ (`{ code, stdin }`) — ใช้กับหน้า Playground |
 | POST | `/api/submission` | ส่งคำตอบแบบฝึกหัด (`{ studentName, studentEmail, exerciseId, code }`) ตรวจกับชุดทดสอบจริงของแบบฝึกหัดนั้น |
 | GET | `/api/progress?email=` | สรุปความคืบหน้าของผู้เรียนรายคน แยกตามระดับความยาก |
@@ -208,8 +219,19 @@ src/
   submission/         # POST /submission — ตรวจคำตอบแบบฝึกหัด
   progress/           # GET /progress — สรุปความคืบหน้าของผู้เรียน
 scripts/
-  seed.js             # ใส่บทเรียนตัวอย่าง 9 บท (3 ระดับ x 3) พร้อมแบบฝึกหัดลง MongoDB
+  seed.js             # เพิ่ม/อัปเดตบทเรียน 9 บท พร้อมแบบฝึกหัดลง MongoDB (ID ของแบบฝึกหัดคงที่ ความคืบหน้าผู้เรียนจึงไม่หายเมื่อ seed ซ้ำ)
+  lessons.data.js     # metadata บทเรียน/แบบฝึกหัด โค้ดตั้งต้น โค้ดเฉลย และชุดทดสอบ
+  content/            # เนื้อหาสอนทั้งหมดเป็น Markdown: <slug>.md (เนื้อหาบท), <slug>.exercise-<n>.md (โจทย์ / คำใบ้ / คำอธิบายเฉลย)
+  verify/             # สคริปต์ตรวจสอบสำหรับนักพัฒนา: content.mjs, solutions.mjs, e2e-api.mjs (ดูหัวข้อ "ตรวจสอบเนื้อหาและ API")
 docker-compose.yml    # MongoDB สำหรับการพัฒนาในเครื่องเท่านั้น
+```
+
+### ตรวจสอบเนื้อหาและ API
+
+```bash
+node scripts/verify/content.mjs [file]   # รันทุกโค้ดตัวอย่างในบทเรียนแล้วเทียบผลลัพธ์ (ต้องต่ออินเทอร์เน็ต)
+node scripts/verify/solutions.mjs        # เฉลยต้องผ่านทุกชุดทดสอบ โค้ดตั้งต้นต้องคอมไพล์ได้แต่ยังไม่ผ่าน
+node scripts/verify/e2e-api.mjs          # ทดสอบ API ครบวงจร (ต้องรัน MongoDB + backend และ seed ก่อน)
 ```
 
 ### ผู้พัฒนา

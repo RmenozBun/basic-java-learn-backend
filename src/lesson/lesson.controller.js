@@ -44,7 +44,7 @@ export const getOne = async (req, res) => {
 
 export const getExercise = async (req, res) => {
   try {
-    const result = await new LessonService().getExercise(req.params.id);
+    const result = await new LessonService().getExercise(req.params.id, req.query.email);
     return res.status(200).send({
       status: "success",
       code: 1,
